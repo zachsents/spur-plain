@@ -1,11 +1,22 @@
 // The plain spur: Tasks', Images' and Recorder's own MCP servers (`<app> mcp`, each relaying to its
 // running app and launching it in the background when a tool needs it) as one server on stdio.
 // Their tools and event types carry the app's prefix (`tasks_tick`, `plain.tasks.data.changed`);
-// Tasks' list widget is `ui://plain/tasks`, its taps calling the prefixed tools.
+// Tasks' list widget is `ui://plain/tasks`, drawn in Switch's house components from Tasks' own data:
+// a ring that ticks each item off, a line to write a new one in, and only the empty word when
+// there's nothing to do.
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import path from "node:path"
-import { A2UI_MIME_TYPE, EVENTS, isJson, SUBSCRIPTION, VERSION, WIDGET } from "spur-kit"
+import {
+  A2UI_MIME_TYPE,
+  EVENTS,
+  isJson,
+  SUBSCRIPTION,
+  surface,
+  SWITCH_CATALOG,
+  VERSION,
+  WIDGET,
+} from "spur-kit"
 import type { Json, Widget } from "spur-kit"
 
 import { lines, parse, spawnChild } from "./child.ts"
@@ -19,7 +30,6 @@ const APPS = [
 
 const SPUR = "plain"
 const WIDGET_URI = `ui://${SPUR}/tasks`
-const LIST_URI = "tasks://widget/list"
 const SHOW_LIST = "tasks_show_list"
 
 const tasksWidget = {
@@ -113,23 +123,54 @@ const everyone = async (method: string, params: Json) =>
     })),
   )
 
-/** Points a widget's taps at the prefixed tools: an action's event names the tool it calls. */
-const prefixActions = (v: unknown, prefix: string): unknown => {
-  if (Array.isArray(v)) {
-    return v.map((x) => prefixActions(x, prefix))
+/** The list widget's components; Tasks' data, reshaped by `listData`, feeds them. */
+const LIST_SURFACE = surface("tasks", SWITCH_CATALOG, [
+  { id: "root", component: "Stack", children: ["name", "to_do", "done", "add", "empty"] },
+  { id: "name", component: "Head", label: { "@path": "/name" } },
+  { id: "to_do", component: "Lines", children: { componentId: "item", path: "/to_do" } },
+  { id: "done", component: "Lines", children: { componentId: "item", path: "/done" } },
+  {
+    id: "item",
+    component: "Check",
+    label: { "@path": "label" },
+    detail: { "@path": "detail" },
+    done: { "@path": "done" },
+    action: "tasks_tick",
+    args: { "@path": "args" },
+  },
+  {
+    id: "add",
+    component: "Entry",
+    placeholder: "New item",
+    action: "tasks_add_item",
+    args: { "@path": "/add" },
+    field: "title",
+  },
+  { id: "empty", component: "Empty", label: { "@path": "/empty" } },
+])
+
+/** Tasks' widget data as the house components take it. Nothing to do shows only the empty word. */
+const listData = (d: Json): Json => {
+  const toDo = list(d.to_do).map((i) => ({
+    label: str(i.title),
+    detail: str(i.due),
+    done: false,
+    args: { id: str(i.id), done: true },
+  }))
+  const done = list(d.done).map((i) => ({
+    label: str(i.title),
+    detail: "",
+    done: true,
+    args: { id: str(i.id), done: false },
+  }))
+  const none = toDo.length === 0
+  return {
+    name: none ? "" : str(d.name),
+    to_do: toDo,
+    done: none ? [] : done,
+    add: { list: str(d.list) },
+    empty: none ? "Nothing" : "",
   }
-  if (!isJson(v)) {
-    return v
-  }
-  const out: Json = {}
-  for (const [k, x] of Object.entries(v)) {
-    out[k] = prefixActions(x, prefix)
-  }
-  const event = field(field(out, "action"), "event")
-  if (typeof event.name === "string") {
-    out.action = { ...field(out, "action"), event: { ...event, name: `${prefix}_${event.name}` } }
-  }
-  return out
 }
 
 const decodeMessages = (text: string): readonly unknown[] => {
@@ -141,15 +182,9 @@ const decodeMessages = (text: string): readonly unknown[] => {
   }
 }
 
-/** A widget resource's messages with its taps prefixed. */
-const widgetContent = (r: Json) => ({
-  ...r,
-  text: JSON.stringify(prefixActions(decodeMessages(str(r.text)), "tasks")),
-})
-
-/** `show_list`'s result: its taps prefixed, and its data model as the structured result. */
+/** `show_list`'s result: its widget in house components, and their data as the structured result. */
 const shownList = (result: Json): Json => {
-  let data: unknown = {}
+  let data: Json = {}
   const content = list(result.content).map((c) => {
     const r = field(c, "resource")
     if (c.type !== "resource" || r.mimeType !== A2UI_MIME_TYPE) {
@@ -157,11 +192,15 @@ const shownList = (result: Json): Json => {
     }
     for (const m of decodeMessages(str(r.text))) {
       const update = isJson(m) ? field(m, "updateDataModel") : {}
-      if (update.value !== undefined) {
-        data = update.value
+      if (isJson(update.value)) {
+        data = listData(update.value)
       }
     }
-    return { ...c, resource: widgetContent(r) }
+    const model = { version: "1.0", updateDataModel: { surfaceId: "tasks", value: data } }
+    return {
+      ...c,
+      resource: { ...r, uri: WIDGET_URI, text: JSON.stringify([...LIST_SURFACE, model]) },
+    }
   })
   return { ...result, content, structuredContent: data }
 }
@@ -240,15 +279,10 @@ const callTool = async (id: unknown, params: Json) => {
 
 const readResource = async (id: unknown, params: Json) => {
   const uri = str(params.uri)
-  const tasks = children.get("tasks")
-  if (uri === WIDGET_URI && tasks) {
-    const r = await forward(tasks, id, "resources/read", { ...params, uri: LIST_URI })
-    write(
-      mapResult(r, (result) => ({
-        ...result,
-        contents: list(result.contents).map((c) => ({ ...widgetContent(c), uri })),
-      })),
-    )
+  if (uri === WIDGET_URI && children.has("tasks")) {
+    answer(id, {
+      contents: [{ uri, mimeType: A2UI_MIME_TYPE, text: JSON.stringify(LIST_SURFACE) }],
+    })
     return
   }
   const to = route(uri, "://")
