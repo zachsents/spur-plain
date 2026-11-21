@@ -18,7 +18,7 @@
   },
   "dependencies": {
     "effect": "^4.1.5",
-    "spur-kit": "github:zachsents/spur-kit"
+    "spur-kit": "github:zachsents/spur-kit#b6096f7"
   },
   "devDependencies": {
     "@types/bun": "^1.4.5",
@@ -36,10 +36,6 @@
     ],
     "widgets": [
       "tasks"
-    ],
-    "space": {
-      "id": "home",
-      "name": "Home"
-    }
+    ]
   }
 }
