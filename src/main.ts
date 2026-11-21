@@ -1,9 +1,9 @@
-// The plain spur: Tasks', Images' and Recorder's own MCP servers (`<app> mcp`, each relaying to its
-// running app and launching it in the background when a tool needs it) as one server on stdio.
-// Their tools and event types carry the app's prefix (`tasks_tick`, `plain.tasks.data.changed`);
-// Tasks' list widget is `ui://plain/tasks`, drawn in Switch's house components from Tasks' own data:
-// a ring that ticks each item off, a line to write a new one in, and only the empty word when
-// there's nothing to do.
+// The plain extension: Tasks', Images' and Recorder's own MCP servers (`<app> mcp`, each relaying
+// to its running app and launching it in the background when a tool needs it) as one server on
+// stdio. Their tools and event types carry the app's prefix (`tasks_tick`,
+// `plain.tasks.data.changed`); Tasks' list widget is `ui://plain/tasks`, drawn in Switch's house
+// components from Tasks' own data: a ring that ticks each item off, a line to write a new one in,
+// and only the empty word when there's nothing to do.
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import path from "node:path"
@@ -16,8 +16,8 @@ import {
   SWITCH_CATALOG,
   VERSION,
   WIDGET,
-} from "spur-kit"
-import type { Json, Widget } from "spur-kit"
+} from "switch-ext-kit"
+import type { Json, Widget } from "switch-ext-kit"
 
 import { lines, parse, spawnChild } from "./child.ts"
 import type { Child } from "./child.ts"
@@ -28,8 +28,8 @@ const APPS = [
   { prefix: "recorder", name: "Recorder" },
 ] as const
 
-const SPUR = "plain"
-const WIDGET_URI = `ui://${SPUR}/tasks`
+const EXTENSION = "plain"
+const WIDGET_URI = `ui://${EXTENSION}/tasks`
 const SHOW_LIST = "tasks_show_list"
 
 const tasksWidget = {
@@ -38,7 +38,7 @@ const tasksWidget = {
   surfaces: ["space", "chat"],
   resource: WIDGET_URI,
   tool: SHOW_LIST,
-  refresh: [`${SPUR}.tasks.data.changed`],
+  refresh: [`${EXTENSION}.tasks.data.changed`],
 } satisfies Widget
 
 const field = (m: Json, key: string): Json => {
@@ -80,7 +80,7 @@ const heard = (m: Json, child: Child) => {
       return
     }
     const named =
-      typeof params.name === "string" ? { name: `${SPUR}.${child.prefix}.${params.name}` } : {}
+      typeof params.name === "string" ? { name: `${EXTENSION}.${child.prefix}.${params.name}` } : {}
     write({ ...m, params: { ...params, ...named, _meta: { ...meta, [SUBSCRIPTION]: id } } })
     return
   }
@@ -238,7 +238,7 @@ const events = async () => {
   return all.flatMap(({ child, result }) =>
     list(result.events).map((e) => ({
       ...e,
-      name: `${SPUR}.${child.prefix}.${str(e.name)}`,
+      name: `${EXTENSION}.${child.prefix}.${str(e.name)}`,
       _meta: { ...field(e, "_meta"), [VERSION]: 1 },
     })),
   )
@@ -261,7 +261,7 @@ const initialize = async (id: unknown, params: Json) => {
   answer(id, {
     protocolVersion: version ?? str(params.protocolVersion),
     capabilities: { tools: {}, resources: {}, extensions: { [EVENTS]: { listChanged: false } } },
-    serverInfo: { name: SPUR, version: "0.1.0" },
+    serverInfo: { name: EXTENSION, version: "0.1.0" },
     instructions: INSTRUCTIONS,
   })
 }
@@ -294,7 +294,7 @@ const readResource = async (id: unknown, params: Json) => {
 }
 
 const eventRequest = (method: string) => async (id: unknown, params: Json) => {
-  const to = route(str(params.name).replace(`${SPUR}.`, ""), ".")
+  const to = route(str(params.name).replace(`${EXTENSION}.`, ""), ".")
   if (!to) {
     fail(id, -32_023, `No event type ${str(params.name)}`)
     return
@@ -306,7 +306,7 @@ const eventRequest = (method: string) => async (id: unknown, params: Json) => {
       ...(Array.isArray(result.events) && {
         events: list(result.events).map((e) => ({
           ...e,
-          name: `${SPUR}.${to.child.prefix}.${str(e.name)}`,
+          name: `${EXTENSION}.${to.child.prefix}.${str(e.name)}`,
         })),
       }),
     })),

@@ -1,7 +1,7 @@
 // One app's own MCP server (`<app> mcp`) as a child on stdio: requests to it under ids of its own,
 // its answers back as promises, everything else it says to `heard`.
-import { isJson } from "spur-kit"
-import type { Json } from "spur-kit"
+import { isJson } from "switch-ext-kit"
+import type { Json } from "switch-ext-kit"
 
 export const parse = (line: string): Json | null => {
   try {
@@ -28,7 +28,7 @@ export const lines = async (stream: ReadableStream<Uint8Array>, each: (line: str
 }
 
 export interface Child {
-  /** Its prefix to the spur: `tasks`, so `tick` is `tasks_tick`. */
+  /** Its prefix to the extension: `tasks`, so `tick` is `tasks_tick`. */
   readonly prefix: string
   /** Its name to people: `Tasks`. */
   readonly name: string
