@@ -9,6 +9,7 @@ import { homedir } from "node:os"
 import path from "node:path"
 import {
   A2UI_MIME_TYPE,
+  BASIC_CATALOG,
   EVENTS,
   isJson,
   SUBSCRIPTION,
@@ -125,10 +126,30 @@ const everyone = async (method: string, params: Json) =>
 
 /** The list widget's components; Tasks' data, reshaped by `listData`, feeds them. */
 const LIST_SURFACE = surface("tasks", SWITCH_CATALOG, [
-  { id: "root", component: "Stack", children: ["name", "to_do", "done", "add", "empty"] },
-  { id: "name", component: "Head", label: { "@path": "/name" } },
-  { id: "to_do", component: "Lines", children: { componentId: "item", path: "/to_do" } },
-  { id: "done", component: "Lines", children: { componentId: "item", path: "/done" } },
+  {
+    id: "root",
+    component: "Column",
+    catalogId: BASIC_CATALOG,
+    children: ["name", "to_do", "done", "add", "empty"],
+  },
+  {
+    id: "name",
+    component: "Text",
+    catalogId: BASIC_CATALOG,
+    text: { "@call": "formatString", args: { value: `# \${/name}` } },
+  },
+  {
+    id: "to_do",
+    component: "List",
+    catalogId: BASIC_CATALOG,
+    children: { componentId: "item", path: "/to_do" },
+  },
+  {
+    id: "done",
+    component: "List",
+    catalogId: BASIC_CATALOG,
+    children: { componentId: "item", path: "/done" },
+  },
   {
     id: "item",
     component: "Check",
@@ -146,7 +167,13 @@ const LIST_SURFACE = surface("tasks", SWITCH_CATALOG, [
     args: { "@path": "/add" },
     field: "title",
   },
-  { id: "empty", component: "Empty", label: { "@path": "/empty" } },
+  {
+    id: "empty",
+    component: "Text",
+    catalogId: BASIC_CATALOG,
+    text: { "@path": "/empty" },
+    variant: "caption",
+  },
 ])
 
 /** Tasks' widget data as the house components take it. Nothing to do shows only the empty word. */
