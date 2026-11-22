@@ -136,7 +136,11 @@ const LIST_SURFACE = surface("tasks", SWITCH_CATALOG, [
     id: "name",
     component: "Text",
     catalogId: BASIC_CATALOG,
-    text: { "@call": "formatString", args: { value: `# \${/name}` } },
+    text: {
+      "@call": "formatString",
+      catalogId: BASIC_CATALOG,
+      args: { value: `# \${/name}` },
+    },
   },
   {
     id: "to_do",
