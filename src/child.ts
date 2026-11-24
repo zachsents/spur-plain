@@ -37,6 +37,8 @@ export interface Child {
   /** Writes one message as it is: a notification, or an answer to its own request. */
   readonly send: (m: Json) => void
   readonly kill: () => void
+  /** Its process has ended. */
+  readonly exited: () => boolean
 }
 
 export const spawnChild = (
@@ -48,6 +50,7 @@ export const spawnChild = (
   const proc = Bun.spawn([binary, "mcp"], { stdin: "pipe", stdout: "pipe", stderr: "inherit" })
   const waiting = new Map<number, PromiseWithResolvers<Json>>()
   let next = 1
+  let ended = false
   const write = (m: Json) => {
     void proc.stdin.write(`${JSON.stringify(m)}\n`)
   }
@@ -68,6 +71,7 @@ export const spawnChild = (
   // A child that exits answers what it was asked with an error.
   void (async () => {
     await proc.exited
+    ended = true
     for (const [id, asked] of waiting) {
       asked.resolve({ jsonrpc: "2.0", id, error: { code: -32_603, message: `${prefix} exited` } })
     }
@@ -90,6 +94,7 @@ export const spawnChild = (
     kill: () => {
       proc.kill()
     },
+    exited: () => ended,
   }
   return child
 }

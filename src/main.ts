@@ -4,9 +4,11 @@
 // `plain.tasks.data.changed`); Tasks' list widget is `ui://plain/tasks`, drawn in Switch's house
 // components from Tasks' own data: a ring that ticks each item off, a line to write a new one in,
 // and only the empty word when there's nothing to do.
+import { randomUUID } from "node:crypto"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import path from "node:path"
+import { Schema } from "effect"
 import {
   A2UI_MIME_TYPE,
   BASIC_CATALOG,
@@ -92,14 +94,69 @@ const heard = (m: Json, child: Child) => {
 
 const dir = process.env.PLAIN_APPS ?? path.join(homedir(), "Applications")
 const children = new Map<string, Child>()
+const missing: string[] = []
 for (const app of APPS) {
   const binary = path.join(dir, `${app.name}.app`, "Contents", "MacOS", app.prefix)
   if (existsSync(binary)) {
     children.set(app.prefix, spawnChild(app, binary, heard))
   } else {
+    missing.push(app.name)
     process.stderr.write(`${app.name} isn't installed in ${dir}: bun run apps\n`)
   }
 }
+
+/** Every this often, as its manifest's `heartbeat` promises. */
+const BEAT = 5 * 60_000
+const HEARTBEAT = `${EXTENSION}.heartbeat`
+const heartbeatEntry = {
+  name: HEARTBEAT,
+  description: "",
+  delivery: ["push"],
+  inputSchema: { type: "object", properties: {} },
+  payloadSchema: Schema.toJsonSchemaDocument(
+    Schema.Struct({
+      entity: Schema.Literal(`sense:${EXTENSION}`),
+      summary: Schema.String,
+      facts: Schema.Struct({ failing: Schema.NullOr(Schema.String), apps: Schema.Finite }),
+    }),
+  ).schema,
+  _meta: { [VERSION]: 1 },
+}
+
+/** The client's `events/stream` requests for the heartbeat, each sent every beat. */
+const beatTo = new Set<unknown>()
+
+/** How it is: its apps' servers up, what isn't and why. */
+const heartbeat = () => {
+  const up = [...children.values()].filter((c) => !c.exited())
+  const down = [
+    ...missing.map((name) => `${name} isn't installed`),
+    ...[...children.values()].filter((c) => c.exited()).map((c) => `${c.name} exited`),
+  ]
+  return {
+    entity: `sense:${EXTENSION}`,
+    summary: up.map((c) => c.name).join(", ") || "no apps",
+    facts: { failing: down.length === 0 ? null : down.join("; "), apps: up.length },
+  }
+}
+
+const beat = () => {
+  const data = heartbeat()
+  for (const id of beatTo) {
+    write({
+      jsonrpc: "2.0",
+      method: "notifications/events/event",
+      params: {
+        eventId: randomUUID(),
+        name: HEARTBEAT,
+        timestamp: new Date().toISOString(),
+        data,
+        _meta: { [SUBSCRIPTION]: id },
+      },
+    })
+  }
+}
+const beating = setInterval(beat, BEAT)
 
 /** A request to one child as the client's own: its answer under the client's id. */
 const forward = async (child: Child, id: unknown, method: string, params: Json): Promise<Json> => {
@@ -266,13 +323,16 @@ const tools = async () => {
 
 const events = async () => {
   const all = await everyone("events/list", {})
-  return all.flatMap(({ child, result }) =>
-    list(result.events).map((e) => ({
-      ...e,
-      name: `${EXTENSION}.${child.prefix}.${str(e.name)}`,
-      _meta: { ...field(e, "_meta"), [VERSION]: 1 },
-    })),
-  )
+  return [
+    heartbeatEntry,
+    ...all.flatMap(({ child, result }) =>
+      list(result.events).map((e) => ({
+        ...e,
+        name: `${EXTENSION}.${child.prefix}.${str(e.name)}`,
+        _meta: { ...field(e, "_meta"), [VERSION]: 1 },
+      })),
+    ),
+  ]
 }
 
 const INSTRUCTIONS =
@@ -325,6 +385,15 @@ const readResource = async (id: unknown, params: Json) => {
 }
 
 const eventRequest = (method: string) => async (id: unknown, params: Json) => {
+  if (str(params.name) === HEARTBEAT) {
+    if (method === "events/stream") {
+      beatTo.add(id)
+      beat()
+    } else {
+      answer(id, { events: [] })
+    }
+    return
+  }
   const to = route(str(params.name).replace(`${EXTENSION}.`, ""), ".")
   if (!to) {
     fail(id, -32_023, `No event type ${str(params.name)}`)
@@ -383,6 +452,7 @@ const notifications: Record<string, (m: Json) => void> = {
   },
   "notifications/cancelled": (m) => {
     const params = field(m, "params")
+    beatTo.delete(params.requestId)
     const sent = childIds.get(params.requestId)
     if (sent) {
       sent.child.send({ ...m, params: { ...params, requestId: sent.id } })
@@ -410,6 +480,7 @@ await lines(Bun.stdin.stream(), (line) => {
     void handle(m)
   }
 })
+clearInterval(beating)
 for (const child of children.values()) {
   child.kill()
 }
