@@ -1,49 +1,24 @@
-// The plain extension: Tasks', Images' and Recorder's own MCP servers (`<app> mcp`, each relaying
-// to its running app and launching it in the background when a tool needs it) as one server on
-// stdio. Their tools and event types carry the app's prefix (`tasks_tick`,
-// `plain.tasks.data.changed`); Tasks' list widget is `ui://plain/tasks`, drawn in Switch's house
-// components from Tasks' own data: a ring that ticks each item off, a line to write a new one in,
-// and only the empty word when there's nothing to do.
+// The plain extension: Images' and Recorder's own MCP servers (`<app> mcp`, each relaying to its
+// running app and launching it in the background when a tool needs it) as one server on stdio.
+// Their tools and event types carry the app's prefix (`images_crop_to`,
+// `plain.images.data.changed`).
 import { randomUUID } from "node:crypto"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import path from "node:path"
 import { Schema } from "effect"
-import {
-  A2UI_MIME_TYPE,
-  BASIC_CATALOG,
-  EVENTS,
-  isJson,
-  SUBSCRIPTION,
-  surface,
-  SWITCH_CATALOG,
-  VERSION,
-  WIDGET,
-} from "switch-ext-kit"
-import type { Json, Widget } from "switch-ext-kit"
+import { EVENTS, isJson, SUBSCRIPTION, VERSION } from "switch-ext-kit"
+import type { Json } from "switch-ext-kit"
 
 import { lines, parse, spawnChild } from "./child.ts"
 import type { Child } from "./child.ts"
 
 const APPS = [
-  { prefix: "tasks", name: "Tasks" },
   { prefix: "images", name: "Images" },
   { prefix: "recorder", name: "Recorder" },
 ] as const
 
 const EXTENSION = "plain"
-const WIDGET_URI = `ui://${EXTENSION}/tasks`
-const SHOW_LIST = "tasks_show_list"
-
-const tasksWidget = {
-  name: "tasks",
-  title: "Tasks",
-  surfaces: ["space", "chat"],
-  resource: WIDGET_URI,
-  tool: SHOW_LIST,
-  refresh: [`${EXTENSION}.tasks.data.changed`],
-} satisfies Widget
-
 const field = (m: Json, key: string): Json => {
   const v = m[key]
   return isJson(v) ? v : {}
@@ -181,119 +156,7 @@ const everyone = async (method: string, params: Json) =>
     })),
   )
 
-/** The list widget's components; Tasks' data, reshaped by `listData`, feeds them. */
-const LIST_SURFACE = surface("tasks", SWITCH_CATALOG, [
-  {
-    id: "root",
-    component: "Column",
-    catalogId: BASIC_CATALOG,
-    children: ["name", "to_do", "done", "add", "empty"],
-  },
-  {
-    id: "name",
-    component: "Text",
-    catalogId: BASIC_CATALOG,
-    text: {
-      "@call": "formatString",
-      catalogId: BASIC_CATALOG,
-      args: { value: `# \${/name}` },
-    },
-  },
-  {
-    id: "to_do",
-    component: "List",
-    catalogId: BASIC_CATALOG,
-    children: { componentId: "item", path: "/to_do" },
-  },
-  {
-    id: "done",
-    component: "List",
-    catalogId: BASIC_CATALOG,
-    children: { componentId: "item", path: "/done" },
-  },
-  {
-    id: "item",
-    component: "Check",
-    label: { "@path": "label" },
-    detail: { "@path": "detail" },
-    done: { "@path": "done" },
-    action: "tasks_tick",
-    args: { "@path": "args" },
-  },
-  {
-    id: "add",
-    component: "Entry",
-    placeholder: "New item",
-    action: "tasks_add_item",
-    args: { "@path": "/add" },
-    field: "title",
-  },
-  {
-    id: "empty",
-    component: "Text",
-    catalogId: BASIC_CATALOG,
-    text: { "@path": "/empty" },
-    variant: "caption",
-  },
-])
-
-/** Tasks' widget data as the house components take it. Nothing to do shows only the empty word. */
-const listData = (d: Json): Json => {
-  const toDo = list(d.to_do).map((i) => ({
-    label: str(i.title),
-    detail: str(i.due),
-    done: false,
-    args: { id: str(i.id), done: true },
-  }))
-  const done = list(d.done).map((i) => ({
-    label: str(i.title),
-    detail: "",
-    done: true,
-    args: { id: str(i.id), done: false },
-  }))
-  const none = toDo.length === 0
-  return {
-    name: none ? "" : str(d.name),
-    to_do: toDo,
-    done: none ? [] : done,
-    add: { list: str(d.list) },
-    empty: none ? "Nothing" : "",
-  }
-}
-
-const decodeMessages = (text: string): readonly unknown[] => {
-  try {
-    const v: unknown = JSON.parse(text)
-    return Array.isArray(v) ? v : []
-  } catch {
-    return []
-  }
-}
-
-/** `show_list`'s result: its widget in house components, and their data as the structured result. */
-const shownList = (result: Json): Json => {
-  let data: Json = {}
-  const content = list(result.content).map((c) => {
-    const r = field(c, "resource")
-    if (c.type !== "resource" || r.mimeType !== A2UI_MIME_TYPE) {
-      return c
-    }
-    for (const m of decodeMessages(str(r.text))) {
-      const update = isJson(m) ? field(m, "updateDataModel") : {}
-      if (isJson(update.value)) {
-        data = listData(update.value)
-      }
-    }
-    const model = { version: "1.0", updateDataModel: { surfaceId: "tasks", value: data } }
-    return {
-      ...c,
-      resource: { ...r, uri: WIDGET_URI, text: JSON.stringify([...LIST_SURFACE, model]) },
-    }
-  })
-  return { ...result, content, structuredContent: data }
-}
-
-/** A prefixed name's child and the name it knows: `tasks_tick` is Tasks' `tick`. */
+/** A prefixed name's child and the name it knows: `images_crop_to` is Images' `crop_to`. */
 const route = (name: string, separator: string) => {
   const cut = name.indexOf(separator)
   const child = cut === -1 ? undefined : children.get(name.slice(0, cut))
@@ -311,12 +174,7 @@ const tools = async () => {
       .map((t) => {
         const name = `${child.prefix}_${str(t.name)}`
         const { _meta: _, ...rest } = t
-        return {
-          ...rest,
-          name,
-          title: `${child.name}: ${str(t.title)}`,
-          ...(name === SHOW_LIST && { _meta: { ui: { resourceUri: WIDGET_URI } } }),
-        }
+        return { ...rest, name, title: `${child.name}: ${str(t.title)}` }
       }),
   )
 }
@@ -336,7 +194,7 @@ const events = async () => {
 }
 
 const INSTRUCTIONS =
-  "Tasks, Images and Recorder: plain's apps on this computer, their tools named by app (tasks_, images_, recorder_). Changes show in the app at once; an app that isn't running is launched in the background. Every tool returns the app's state after the change. tasks_show_list is a list as a widget."
+  "Images and Recorder: plain's apps on this computer, their tools named by app (images_, recorder_). Changes show in the app at once; an app that isn't running is launched in the background. Every tool returns the app's state after the change."
 
 /** A response with its result changed, if it has one. */
 const mapResult = (r: Json, f: (result: Json) => Json): Json =>
@@ -365,17 +223,11 @@ const callTool = async (id: unknown, params: Json) => {
     return
   }
   const r = await forward(to.child, id, "tools/call", { ...params, name: to.name })
-  write(name === SHOW_LIST ? mapResult(r, shownList) : r)
+  write(r)
 }
 
 const readResource = async (id: unknown, params: Json) => {
   const uri = str(params.uri)
-  if (uri === WIDGET_URI && children.has("tasks")) {
-    answer(id, {
-      contents: [{ uri, mimeType: A2UI_MIME_TYPE, text: JSON.stringify(LIST_SURFACE) }],
-    })
-    return
-  }
   const to = route(uri, "://")
   if (!to) {
     fail(id, -32_002, `No resource ${uri}`)
@@ -424,14 +276,7 @@ const requests: Record<string, (id: unknown, params: Json) => void | Promise<voi
   },
   "tools/call": callTool,
   "resources/list": (id) => {
-    const widget = {
-      uri: WIDGET_URI,
-      name: tasksWidget.name,
-      title: tasksWidget.title,
-      mimeType: A2UI_MIME_TYPE,
-      _meta: { [WIDGET]: tasksWidget },
-    }
-    answer(id, { resources: children.has("tasks") ? [widget] : [] })
+    answer(id, { resources: [] })
   },
   "resources/templates/list": (id) => {
     answer(id, { resourceTemplates: [] })

@@ -273,7 +273,7 @@ fn surface_id(app: AppInfo, name: &str, arguments: &Value) -> String {
     format!("{}_{}_{:08x}", app.id, name, hasher.finish() as u32)
 }
 
-/// `tasks://widget/list?list=k3f9x2`: each argument is a query value, as text unless it's JSON
+/// `images://widget/list?list=k3f9x2`: each argument is a query value, as text unless it's JSON
 /// that isn't a string.
 fn widget_uri(app: AppInfo, name: &str, arguments: &Value) -> String {
     let mut uri = format!("{}://widget/{name}", app.id);

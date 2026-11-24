@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ai", "crates/imaging", "crates/images", "crates/kit", "crates/recorder", "crates/store", "crates/tasks", "xtask"]
+members = ["crates/ai", "crates/imaging", "crates/images", "crates/kit", "crates/recorder", "crates/store", "xtask"]
 
 # Every app builds against this one GPUI revision. Bump it here, never per app.
 [workspace.dependencies]

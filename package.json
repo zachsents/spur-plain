@@ -2,19 +2,20 @@
   "name": "switch-ext-plain",
   "version": "0.1.0",
   "private": true,
-  "description": "plain's native macOS apps, Tasks, Images and Recorder, as a Switch extension.",
+  "description": "plain's native macOS apps, Images and Recorder, as a Switch extension.",
   "license": "MIT",
   "repository": "github:zachsents/switch-ext-plain",
   "type": "module",
   "scripts": {
     "start": "bun src/main.ts",
-    "apps": "cargo xtask install tasks && cargo xtask install images && cargo xtask install recorder",
+    "apps": "cargo xtask install images && cargo xtask install recorder",
     "typecheck": "tsgo --noEmit",
     "lint": "oxlint --type-aware --fix --fix-suggestions",
     "format": "oxfmt --write .",
     "fix": "bun run lint && bun run format",
     "rust": "cargo clippy --workspace --quiet -- -D warnings",
-    "check": "bun run typecheck && bun run fix && bun run rust"
+    "check": "bun run typecheck && bun run fix && bun test && bun run rust",
+    "test": "bun test"
   },
   "dependencies": {
     "effect": "^4.1.5",
@@ -34,9 +35,6 @@
     "heartbeat": 300000,
     "needs": [
       "macos"
-    ],
-    "widgets": [
-      "tasks"
     ]
   }
 }
