@@ -1,3 +1,5 @@
+**Moved to [zachsents/switch](https://github.com/zachsents/switch/tree/main/extensions/plain).** This repo is archived.
+
 # switch-ext-plain
 
 plain's native macOS apps as one extension: Images (a viewer and editor in the spirit of Preview) and Recorder (screen and meeting recordings, transcribed).
